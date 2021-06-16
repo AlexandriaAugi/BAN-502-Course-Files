@@ -1,0 +1,215 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Logistic Regression (Classification)
+### Augi, Alexandria
+
+```{r packages}
+library(tidyverse)
+library(tidymodels)
+library(e1071)
+library(ROCR)
+
+library(readr)
+parole <- read_csv("parole.csv") %>% drop_na() 
+parole <- parole %>% mutate(male = as_factor(male)) %>% mutate(male = fct_recode(male, "female" = "0", "male" = "1" )) %>%
+  mutate(race = as_factor(race)) %>% mutate(race = fct_recode(race, "white" = "1", "other" = "2" )) %>%
+  mutate(state = as_factor(state)) %>% mutate(state = fct_recode(state, "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4", "Other" = "1" )) %>%
+  mutate(crime = as_factor(crime)) %>% 
+  mutate(crime = fct_recode(crime, "larceny" = "2", "drug-related" = "3", "driving-related" = "4", "other" = "1" )) %>%
+  mutate(multiple.offenses = as_factor(multiple.offenses)) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "multiple offenses" = "1", "other" = "0" )) %>%
+  mutate(violator = as_factor(violator)) %>%
+  mutate(violator = fct_recode(violator, "violated parole" = "1", "parole without violation" = "0" ))
+
+```
+
+### Task 1
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prop = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### Task 2
+```{r}
+t1 = table(train$violator, train$male)
+t2 = table(train$violator, train$race)
+t3 = table(train$violator, train$age)
+t4 = table(train$violator, train$state)
+t5 = table(train$violator, train$time.served)
+t6 = table(train$violator, train$max.sentence)
+t7 = table(train$violator, train$multiple.offenses)
+t8 = table(train$violator, train$crime)
+
+prop.table(t1, margin = 2 )
+prop.table(t2, margin = 2 )
+prop.table(t3, margin = 2 )
+prop.table(t4, margin = 2 )
+prop.table(t5, margin = 2 )
+prop.table(t6, margin = 2 )
+prop.table(t7, margin = 2 )
+prop.table(t8, margin = 2 )
+```
+
+In regards to gender having an impact on the violators, there is only a 4% difference between males and females. These lower numbers do not appear to have a large impact on those violating parole. For race, 14% percent of inmate classified as "other" violated parole. Age does appear to have an impact on parole violation, those over 52.6 have 0% of violating their parole. Louisiana has a very high percentage 43.75% of people violated their parole. Time served does not appear to have a large impact on the parole violation. Those who have a sentence over 13 years, have a higher chance of breaking parole but it is still not high. Of those who have multiple offenses, 14% broke parole. Of those who are incarcerated for a drug related crime, 12.6% violated parole. Overall, a person of a race other than white under the age of 52.6 coming from Louisiana for a crime related to drugs, has a high chance of violating parole.
+
+### Task 3
+```{r}
+violator_model = 
+  logistic_reg() %>% 
+  set_engine("glm") 
+
+violator_recipe = recipe(violator ~ state, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) 
+
+logreg_wf = workflow() %>%
+  add_recipe(violator_recipe) %>% 
+  add_model(violator_model)
+
+titanic_fit = fit(logreg_wf, train)
+summary(titanic_fit$fit$fit$fit)
+```
+
+We can see the negative coefficients on the Kentucky and Virginia variables which for this case indicate the inmates will not break parole. The Louisiana inmates have the highest coefficient indicating they have the highest percentage of breaking parole. The AIC is 287.75 which indicates a fairly high quality of this model.
+
+### Task 4
+```{r}
+violator_model = 
+  logistic_reg() %>% 
+  set_engine("glm") 
+
+violator_recipe = recipe(violator ~ male + race + state + multiple.offenses, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) 
+
+logreg_wf = workflow() %>%
+  add_recipe(violator_recipe) %>% 
+  add_model(violator_model)
+
+parole_fit = fit(logreg_wf, train)
+summary(parole_fit$fit$fit$fit)
+```
+The model with the variable only of males has an AIC of 362.86. When we add the variable race, the AIC becomes 362.53 which is slightly lower than previously. When the variable age is added, the AIC jumps to 363.91 so this model is not better. Now with the variable state, the AIC drops to 285.33 giving us the highest quality model yet. The AIC with time served included is 286.11 which is higher than it was previously. With the max sentence variable, the AIC is 287.2 which is also higher. Now with the variable multiple offenses, the AIC drops to 269.67 providing us with the highest quality model at this point. With the final variable crime, the AIC is 274.54. Our final model contains male, race, sate, and multiple offenses to provide us with the highest quality model with an AIC of 269.67. The model also appears to be fairly intuitive. The state of Virginia and those with multiple offenses are the most significant variables and the race "other" is also significant.
+
+### Task 5
+```{r}
+violator_model = 
+  logistic_reg() %>% 
+  set_engine("glm") 
+
+violator_recipe = recipe(violator ~ race + state + multiple.offenses, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) 
+
+logreg_wf = workflow() %>%
+  add_recipe(violator_recipe) %>% 
+  add_model(violator_model)
+
+parole_fit = fit(logreg_wf, train)
+summary(parole_fit$fit$fit$fit)
+```
+
+This model is the best fit for the data with an AIC of 269.04. Once again the state of Virginia and multiple offenses are the most significant variables with the race "other" also holding some significance.
+
+### Task 6
+```{r}
+Train1 <- select(train, state, race, multiple.offenses, violator) %>%
+  filter(state=="Louisiana", race=="white", multiple.offenses=="multiple offenses")
+  Parolee1 <- predict(parole_fit, Train1, type="prob")[2]
+head(Parolee1)
+
+Train2 <- select(train, state, race, multiple.offenses, violator) %>%
+  filter(state=="Kentucky", race=="other", multiple.offenses=="other")
+  Parolee2 <- predict(parole_fit, Train2, type="prob")[2]
+head(Parolee2)
+```
+
+For predicted probability of parole violation Parolee1, Louisiana with multiple offenses and white race, we have 40.30897%. For predicted probability of parole violation Parolee3, Kentucky with not multiple offenses and other race, we have 13.70075%.
+
+### Task 7
+```{r}
+predictions = predict(parole_fit, train, type="prob")[2]
+ROCRpred = prediction(predictions, train$violator)
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+as.numeric(performance(ROCRpred, "auc")@y.values)
+
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+
+```
+
+The probability threshold that best balances specificity and sensitivity is 0.1442745.
+
+### Task 8
+```{r}
+t1 = table(train$violator,predictions > 0.1295001)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+# Sensitivity
+42/(16+42)
+# Specificity
+(376)/(376+71)
+```
+
+The accuracy is 0.8356436. The sensitivity is 0.6724138. The specificity is 0.8568233. If a parolee is incorrectly classified, resources might be spent on a parolee who was at no risk. Or if the parolee does not have enough resources placed on them, and breaks parolee, this could cause issues.
+
+### Task 9
+```{r}
+t1 = table(train$violator,predictions > 0.5)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+
+t1 = table(train$violator,predictions > 0.6)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+
+t1 = table(train$violator,predictions > 0.4)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+I tried looking at a threshold of 0.4 and the accuracy is 0.8891089. Using 0.5 as a threshold, the accuracy is 0.8990099. Trying 0.6 as the threshold, the accuracy falls a little bit to 0.8970297. The threshold of 0.5 appears to be the best for this set.
+
+### Task 10
+```{r}
+violator_model = 
+  logistic_reg() %>% 
+  set_engine("glm") 
+
+violator_recipe = recipe(violator ~ race + state + multiple.offenses, test) %>%
+  step_dummy(all_nominal(), -all_outcomes()) 
+
+logreg_wf = workflow() %>%
+  add_recipe(violator_recipe) %>% 
+  add_model(violator_model)
+
+parole_fit = fit(logreg_wf, test)
+summary(parole_fit$fit$fit$fit)
+
+predictions = predict(parole_fit, test, type="prob")[2]
+
+t1 = table(test$violator,predictions > 0.6)
+t1
+(t1[1,1]+t1[2,2])/nrow(test)
+```
+
+To determine the accuracy of the testing data set, we use the value determined on the training data set of 0.5. The testing data set provides a 0.9 accuracy on the same variables examined on the training set using the 0.5 threshold value previously determined.
+
+```{r}
+t1 = table(train$violator, predictions > 0.2015788)
+t1
+(t1[1,1]+t1[2,2])/nrow(train)
+39/(39+15)
+(349)/(349+68)
+```
+

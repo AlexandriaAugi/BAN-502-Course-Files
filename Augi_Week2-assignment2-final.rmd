@@ -1,0 +1,152 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Multiple Linear Regression Assignment
+### Augi, Alexandria
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(ggcorrplot)
+library(MASS)
+library(lubridate)
+library(lmtest)
+library(glmnet)
+library(readr)
+```
+### Task 1
+```{r Loading Data}
+bike <- bike_cleaned <- read_csv("bike_cleaned.csv")
+bike = bike %>% mutate(dteday = mdy(dteday)) %>%
+   mutate_if(sapply(bike, is.character), as.factor) %>%
+  mutate(hr = as.factor(hr))
+```
+Why do we convert the “hr” variable into factor? Why not just leave as numbers?
+
+In order to run the following tests, we will need all of the variables to be the same type of data.
+
+### Task 2
+```{r High Corr}
+bike1 <- dplyr::select(bike, instant, temp, atemp, hum, windspeed, count)
+ggpairs(bike1) +
+  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+```
+Which of the quantitative variables appears to be best correlated with “count”?
+
+It appears the temp is the quantitative variable best correlated with count.
+
+### Task 3
+```{r High Effect}
+ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=season,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot() + theme_bw()
+ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot() + theme_bw()
+```
+It appears most bikes are rented from the hours of 8-20, we can see that the hours during the day affects the count of bikes rented. This makes sense as most people are awake and active during those hours. Season does not seem to have that much impact on count as we see most season hold a fairly consistent count other than winter being slightly lower than the other three seasons. Holiday does seem to affect the bike rentals numbers, using the box plots to reach this conclusion. More bikes appear to be rented during the holiday seasons. This is a reasonable conclusion as many tourists or vacationers will rent bikes for leisure activity. Working day or work day also seems to have a slight affect to the count of bikes rented out. This makes sense as those who are working will be unable to rent a bike. Weather does appear to have an affect on the bike rentals. When there is heavy precipitation, fewer bikes will be rented compared to when no precipitation or misty is the forecast. Week day does not appear to impact the rented bikes, most days hold consistent rental numbers.
+
+### Task 4
+```{r Linear Regression Model}
+bike_simple = recipe(count ~ temp, bike)
+lm_model = 
+  linear_reg() %>% 
+  set_engine("lm") 
+
+lm_wflow =
+  workflow() %>%
+  add_model(lm_model) %>%
+  add_recipe(bike_simple)
+
+lm_fit = fit(lm_wflow, bike)
+summary(lm_fit$fit$fit$fit)
+
+```
+```{r Quality Model}
+include = FALSE
+ggplot(bike, aes(x=temp,y=count)) + geom_point() + 
+  geom_smooth(method="lm",se=FALSE, color="red") + theme_bw()
+dwtest(lm_fit$fit$fit$fit)
+bikes = bike %>% mutate(resid1 = lm_fit$fit$fit$fit$residuals) 
+ggplot(bikes,aes(x=temp,y=resid1)) + geom_point() + theme_bw()
+ggplot(bikes,aes(x=resid1)) + geom_histogram() + theme_bw()
+
+```
+
+Do the predictor and response variable have a linear relationship?
+There does not appear to be a very clear linear relationship between the two variables.
+
+Model errors (residuals) are independent (recall that a residual is the difference between a predicted value and the actual value)?
+We fail to reject the null hypothesis with a p-value greater than 0.05. This suggests that the residuals are likely independent which is good.
+
+Do the model residuals exhibit constant variance?
+A linear effect is present.
+
+Model residuals are Normally-distributed
+The residuals histogram is reasonably Normal.
+
+Overall I would say the quality of this model is mediocre.
+
+### Task 5
+```{r Ridge Regression}
+bikes_recipe = recipe(count ~., bike) %>%
+  step_rm("instant", "dteday", "casual", "registered") %>%
+    #step_ns(temp, deg_free = 4) %>% 
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors()) 
+
+ridge_model =  
+  linear_reg(mixture = 0 ) %>% 
+  set_engine("glmnet")
+
+ridge_wflow = 
+  workflow() %>% 
+  add_model(ridge_model) %>% 
+  add_recipe(bikes_recipe)
+
+ridge_fit = fit(ridge_wflow, bike)
+
+plot(ridge_fit$fit$fit$fit$lambda,ridge_fit$fit$fit$fit$dev.ratio)
+
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>%
+   coef(s = 15)
+
+```
+If we have a smaller lambda value, the R squared value is also small. But as the R square value increase, we have a better description of the model. We shall let Lambda equal 15 as it appears to level off around that mark. The R value is 62.05. At this lambda with have an intercept of 189.4630876. 
+
+### Task 6
+```{r Lasso Regression}
+bikes_recipe = recipe(count ~., bike) %>%
+  step_rm("instant", "dteday", "casual", "registered") %>%
+    #step_ns(temp, deg_free = 4) %>% 
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors())
+
+lasso_model =  
+  linear_reg(mixture = 1) %>% 
+  set_engine("glmnet")
+
+lasso_wflow = 
+  workflow() %>% 
+  add_model(lasso_model) %>% 
+  add_recipe(bikes_recipe)
+lasso_fit = fit(lasso_wflow, bike)
+
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") %>%
+  coef(0.158)
+
+```
+Here the values begin to level off around lambda of 0.158. Selecting this as the lambda value, we have an intercept of 189.46 just as with the ridge regression. But within the lasso we have the mnth_Dec, workingday_WorkingDay, and weathersit_Misty values are removed from the lambda coefficient breakdown. The lambda value is different from the ridge regression because those variables were removed. The R is 63.20.
+
+What are the implications of the model results from the ridge and lasso methods?
+Using the two regression methods, we have decreased the coefficients closer towards zero. We have a high positive interception point implying a positive correlation. We can see that the temperature variable remains very high. In the ridge regression, hours 8 and 18 do have higher coefficients than temperature indicating a greater impact on count of bikes rented. While in the Lasso regression hours 8, 17 and 18 have higher coefficients than temperature indicating a greater impact on the number of bikes rented throughout the day.

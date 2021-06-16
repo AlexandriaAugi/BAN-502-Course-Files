@@ -1,0 +1,70 @@
+---
+title: "Shark Tank Data"
+author: "Alexandria Augi and Andrea Watson"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(tidyverse)
+shark_student <- read_csv("shark_student_og.csv")
+set.seed(12345) 
+shark_split = initial_split(shark_student, prop = 0.7, strata = Deal_Yes) 
+train = training(shark_split)
+test = testing(shark_split)
+```
+
+Column {data-width=650}
+-----------------------------------------------------------------------
+
+### Chart A
+
+```{r}
+p1=ggplot(train, aes(x = Business_Services, fill = Deal_Yes)) + geom_bar()+labs(title="Business Services",
+         x="Did the Team Present a Business Service?")+
+  theme(axis.text.y = element_blank())
+p2=ggplot(train, aes(x = Lifestyle_Home, fill = Deal_Yes))+ geom_bar()+labs(title="Lifestyle or Home",
+         x="Did the Team Present a Lifestyle or Home Product?")+
+  theme(axis.text.y = element_blank())
+p3=ggplot(train, aes(x = Food_Beverage, fill = Deal_Yes)) + geom_bar() +
+  labs(title="Food or Beverage",
+         x="Did the Team Present a Food or Beverage Product?")+
+  theme(axis.text.y = element_blank())
+grid.arrange(p1,p2,p3)
+```
+
+Column {data-width=350}
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+p1 = ggplot(train, aes(x = MalePresenter, fill = Deal_Yes))+ geom_bar()+labs(title="Male Presenters",
+                                                                             x=(NULL),
+                                                                             y=("Number of Presenter"))
+p2 = ggplot(train, aes(x = FemalePresenter, fill = Deal_Yes))+ geom_bar()+labs(title="Female Presenters",
+                                                                             x=(NULL),
+                                                                             y=("Number of Presenter"))
+grid.arrange(p1,p2)
+```
+
+### Chart C
+
+```{r}
+ggplot(train, aes(x = SeasonEpisode, fill = Deal_Yes)) + geom_bar()+labs(title="Episode of Each Season",
+                                                                             x=("Episode"),
+                                                                             y=(NULL))
+```
+
+### Chart D
+
+```{r}
+ggplot(train, aes(x = CompanyState, fill = Deal_Yes)) + geom_bar() +theme(axis.text.x = element_text(angle = 90))+labs(title="State of the Company",
+                                                                             x=("State Name"),
+                                                                             y=(NULL))
+```
+

@@ -1,0 +1,15 @@
+# Model Validation
+### Augi, Alexandria
+
+```{r Packages}
+library(tidyverse)
+library(lubridate)
+library(tidymodels)
+library(readr)
+bike <- bike_cleaned_2 <- read_csv("bike_cleaned-2.csv")
+bike = bike %>% mutate(dteday = mdy(dteday)) %>%
+   mutate_if(sapply(bike, is.character), as.factor) %>%
+  mutate(hr = as.factor(hr))
+```
+
+### Task 1

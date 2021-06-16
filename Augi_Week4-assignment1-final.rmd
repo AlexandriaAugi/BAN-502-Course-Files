@@ -1,0 +1,217 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Classification Trees
+### Augi, Alexandria
+
+```{r packages, include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+
+parole <- read_csv("parole.csv")
+```
+```{r Mutating Data}
+parole <- parole %>% mutate(male = as_factor(male)) %>% mutate(male = fct_recode(male, "female" = "0", "male" = "1" )) %>%
+  mutate(race = as_factor(race)) %>% mutate(race = fct_recode(race, "white" = "1", "other" = "2" )) %>%
+  mutate(state = as_factor(state)) %>% mutate(state = fct_recode(state, "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4", "Other" = "1" )) %>%
+  mutate(crime = as_factor(crime)) %>% 
+  mutate(crime = fct_recode(crime, "larceny" = "2", "drug-related" = "3", "driving-related" = "4", "other" = "1" )) %>%
+  mutate(multiple.offenses = as_factor(multiple.offenses)) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "multiple offenses" = "1", "other" = "0" )) %>%
+  mutate(violator = as_factor(violator)) %>%
+  mutate(violator = fct_recode(violator, "violated parole" = "1", "parole without violation" = "0" ))
+```
+
+### Task 1
+```{r Spliting}
+set.seed(12345)
+parole_split = initial_split(parole, prop = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### Task 2
+```{r Tree}
+parole_recipe = recipe(violator ~., train) %>%
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree() %>% 
+  set_engine("rpart", model = TRUE) %>% 
+  set_mode("classification")
+
+parole_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(parole_recipe)
+
+parole_fit = fit(parole_wflow, train)
+
+tree = parole_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree)
+fancyRpartPlot(tree, tweak=1.5)
+
+```
+
+### Task 3
+If I am reading the tree correctly, a 40 year-old parolee from Louisiana who
+served 5 years in prison, with a sentence of 10 years, and committed multiple offenses has an 87% chance of breaking parole. As the parole is from Louisiana, we go on the left side of the tree. From there, we are only given one option for the parolee's percentage. The rest of the variables are inapplicable in this scenario as the parolee is from Louisiana.
+
+### Task 4
+```{r cp}
+parole_fit$fit$fit$fit$cptable
+
+treepred = predict(parole_fit, train, type = "class")
+head(treepred)
+
+confusionMatrix(treepred$.pred_class, train$violator,positive = "parole without violation")
+```
+
+It appears the minimized xerror value is 1.259259 giving us a cp of 0.0185182. I do not believe the tree in task 2 is associated with this optimal cp value.
+
+### Task 5
+```{r tuning grid}
+set.seed(123)
+folds = vfold_cv(train, v = 5)
+
+parole_recipe = recipe(violator ~., train) %>%
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% 
+  set_mode("classification")
+
+tree_grid = grid_regular(cost_complexity(),
+                          levels = 25) 
+
+parole_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(parole_recipe)
+
+tree_res = 
+  parole_wflow %>% 
+  tune_grid(resamples = folds, grid = tree_grid)
+
+tree_res
+
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+best_tree = tree_res %>%
+  select_best("accuracy")
+```
+
+### Task 6
+Which cp value yields the “optimal” accuracy value? 0.1
+
+### Task 7
+```{r}
+best_tree
+final_wf = 
+  parole_wflow %>% 
+  finalize_workflow(best_tree)
+final_fit = fit(final_wf, train)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+#fancyRpartPlot(tree, tweak = 1.5) 
+summary(tree)
+```
+
+### Task 8
+ What is the accuracy of the “root” that you generated in Task 7? Take your time and think abouthow to determine this value.
+ 
+### Task 9
+```{r more}
+Blood <- read_csv("Blood.csv")
+Blood <- Blood %>%
+  mutate(DonatedMarch = as_factor(DonatedMarch))%>%
+  mutate(DonatedMarch = fct_recode(DonatedMarch, "No" = "0", "Yes" = "1" ))
+ str(Blood) 
+ 
+ set.seed(1234)
+blood_split = initial_split(Blood, prop = 0.70, strata = DonatedMarch)
+trainB = training(blood_split)
+testB = testing(blood_split)
+
+folds = vfold_cv(trainB, v = 5)
+
+blood_recipe = recipe(DonatedMarch ~., trainB) %>%
+  step_dummy(all_nominal(),-all_outcomes())
+
+tree_model = decision_tree(cost_complexity = tune()) %>% 
+  set_engine("rpart", model = TRUE) %>% #don't forget the model = TRUE flag
+  set_mode("classification")
+
+tree_grid = grid_regular(cost_complexity(),
+                          levels = 25) #try 25 sensible values for cp
+
+blood_wflow = 
+  workflow() %>% 
+  add_model(tree_model) %>% 
+  add_recipe(blood_recipe)
+
+tree_res = 
+  blood_wflow %>% 
+  tune_grid(resamples = folds, grid = tree_grid)
+
+tree_res
+
+tree_res %>%
+  collect_metrics() %>%
+  ggplot(aes(cost_complexity, mean)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) 
+
+best_tree = tree_res %>%
+  select_best("accuracy")
+```
+
+The optimal cp is 0.007498942. Here is the highest accuracy of the model. Within the graph, we can see the relationship between accuracy and cp is directly related.
+
+### Task 10
+```{r}
+final_wf = 
+  blood_wflow %>% 
+  finalize_workflow(best_tree)
+
+final_fit = fit(final_wf, trainB)
+
+tree = final_fit %>% 
+  pull_workflow_fit() %>% 
+  pluck("fit")
+
+fancyRpartPlot(tree, tweak = 1.5) 
+
+```
+
+### Task 11
+```{r}
+treepred = predict(final_fit, trainB, type = "class")
+head(treepred)
+
+confusionMatrix(treepred$.pred_class, trainB$DonatedMarch,positive = "Yes") #predictions first then actual
+
+treepred_test = predict(final_fit, testB, type = "class")
+head(treepred_test)
+
+confusionMatrix(treepred_test$.pred_class,testB$DonatedMarch,positive="Yes") #predictions first then actual
+
+```
+
+For this tree with the optimal cp on the training set, the balanced accuracy is 0.6998 while the accuracy is 0.826. For this tree with the optimal cp on the testing set, the balanced accuracy is 0.6998 while the accuracy is 0.7556. So we can see the training set has the higher level of accuracy oof these two data subsests.
